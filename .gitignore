@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Claude Code
+.claude/
+
+# Project-specific
+.tracking
+custom_models.json
