@@ -30,6 +30,7 @@ try:
 except ImportError:
     from transformers import AutoModelForVision2Seq
 from transformers import AutoProcessor, AutoTokenizer, BitsAndBytesConfig
+from transformers.video_utils import VideoMetadata
 
 import folder_paths
 from comfy.utils import ProgressBar
@@ -771,15 +772,19 @@ class QwenVLBase:
         top_p,
         num_beams,
         repetition_penalty,
+        video_fps=16.0,
     ):
         conversation = [{"role": "user", "content": []}]
         if image is not None:
             conversation[0]["content"].append({"type": "image", "image": self.tensor_to_pil(image)})
         if video is not None:
             frames = [self.tensor_to_pil(frame) for frame in video]
+            total_num_frames = len(frames)
             if len(frames) > frame_count:
                 idx = np.linspace(0, len(frames) - 1, frame_count, dtype=int)
                 frames = [frames[i] for i in idx]
+            else:
+                idx = np.arange(len(frames))
             if frames:
                 conversation[0]["content"].append({"type": "video", "video": frames})
         conversation[0]["content"].append({"type": "text", "text": prompt_text})
@@ -787,7 +792,8 @@ class QwenVLBase:
         images = [item["image"] for item in conversation[0]["content"] if item["type"] == "image"]
         video_frames = [frame for item in conversation[0]["content"] if item["type"] == "video" for frame in item["video"]]
         videos = [video_frames] if video_frames else None
-        processed = self.processor(text=chat, images=images or None, videos=videos, return_tensors="pt")
+        video_metadata = [VideoMetadata(total_num_frames=total_num_frames, fps=video_fps, frames_indices=idx.tolist())] if videos else None
+        processed = self.processor(text=chat, images=images or None, videos=videos, video_metadata=video_metadata, do_sample_frames=False, return_tensors="pt")
         model_device = next(self.model.parameters()).device
         model_inputs = {
             key: value.to(model_device) if torch.is_tensor(value) else value
@@ -814,7 +820,7 @@ class QwenVLBase:
         text = self.tokenizer.decode(outputs[0, input_len:], skip_special_tokens=True)
         return text.strip()
 
-    def run(self, model_name, quantization, preset_prompt, custom_prompt, image, video, frame_count, max_tokens, temperature, top_p, num_beams, repetition_penalty, seed, keep_model_loaded, attention_mode, use_torch_compile, device):
+    def run(self, model_name, quantization, preset_prompt, custom_prompt, image, video, frame_count, max_tokens, temperature, top_p, num_beams, repetition_penalty, seed, keep_model_loaded, attention_mode, use_torch_compile, device, video_fps=16.0):
         # Create progress bar with 3 stages: setup, model loading, generation
         pbar = ProgressBar(3)
         
@@ -847,6 +853,7 @@ class QwenVLBase:
                 top_p,
                 num_beams,
                 repetition_penalty,
+                video_fps,
             )
             
             pbar.update_absolute(3, 3, None)
@@ -878,6 +885,7 @@ class AILab_QwenVL(QwenVLBase):
             "optional": {
                 "image": ("IMAGE",),
                 "video": ("IMAGE",),
+                "video_fps": ("FLOAT", {"default": 16.0, "min": 1.0, "max": 120.0, "tooltip": "Frames per second of the input video. Used for accurate timestamp generation."}),
             },
         }
 
@@ -886,8 +894,8 @@ class AILab_QwenVL(QwenVLBase):
     FUNCTION = "process"
     CATEGORY = "🧪AILab/QwenVL"
 
-    def process(self, model_name, quantization, preset_prompt, custom_prompt, attention_mode, max_tokens, keep_model_loaded, seed, image=None, video=None):
-        return self.run(model_name, quantization, preset_prompt, custom_prompt, image, video, 16, max_tokens, 0.6, 0.9, 1, 1.2, seed, keep_model_loaded, attention_mode, False, "auto")
+    def process(self, model_name, quantization, preset_prompt, custom_prompt, attention_mode, max_tokens, keep_model_loaded, seed, image=None, video=None, video_fps=16.0):
+        return self.run(model_name, quantization, preset_prompt, custom_prompt, image, video, 16, max_tokens, 0.6, 0.9, 1, 1.2, seed, keep_model_loaded, attention_mode, False, "auto", video_fps)
 
 class AILab_QwenVL_Advanced(QwenVLBase):
     @classmethod
@@ -923,6 +931,7 @@ class AILab_QwenVL_Advanced(QwenVLBase):
             "optional": {
                 "image": ("IMAGE",),
                 "video": ("IMAGE",),
+                "video_fps": ("FLOAT", {"default": 16.0, "min": 1.0, "max": 120.0, "tooltip": "Frames per second of the input video. Used for accurate timestamp generation."}),
             },
         }
 
@@ -931,8 +940,8 @@ class AILab_QwenVL_Advanced(QwenVLBase):
     FUNCTION = "process"
     CATEGORY = "🧪AILab/QwenVL"
 
-    def process(self, model_name, quantization, attention_mode, use_torch_compile, device, preset_prompt, custom_prompt, max_tokens, temperature, top_p, num_beams, repetition_penalty, frame_count, keep_model_loaded, seed, image=None, video=None):
-        return self.run(model_name, quantization, preset_prompt, custom_prompt, image, video, frame_count, max_tokens, temperature, top_p, num_beams, repetition_penalty, seed, keep_model_loaded, attention_mode, use_torch_compile, device)
+    def process(self, model_name, quantization, attention_mode, use_torch_compile, device, preset_prompt, custom_prompt, max_tokens, temperature, top_p, num_beams, repetition_penalty, frame_count, keep_model_loaded, seed, image=None, video=None, video_fps=16.0):
+        return self.run(model_name, quantization, preset_prompt, custom_prompt, image, video, frame_count, max_tokens, temperature, top_p, num_beams, repetition_penalty, seed, keep_model_loaded, attention_mode, use_torch_compile, device, video_fps)
 
 NODE_CLASS_MAPPINGS = {
     "AILab_QwenVL": AILab_QwenVL,
