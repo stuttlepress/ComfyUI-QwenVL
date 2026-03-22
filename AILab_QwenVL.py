@@ -29,7 +29,7 @@ try:
     from transformers import AutoModelForImageTextToText as AutoModelForVision2Seq
 except ImportError:
     from transformers import AutoModelForVision2Seq
-from transformers import AutoProcessor, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoProcessor, AutoTokenizer, BitsAndBytesConfig, TextStreamer
 from transformers.video_utils import VideoMetadata
 
 import folder_paths
@@ -774,6 +774,7 @@ class QwenVLBase:
         repetition_penalty,
         video_fps=16.0,
         enable_thinking=True,
+        stream_to_console=False,
     ):
         conversation = [{"role": "user", "content": []}]
         if image is not None:
@@ -814,6 +815,9 @@ class QwenVLBase:
             kwargs.update({"do_sample": True, "temperature": temperature, "top_p": top_p})
         else:
             kwargs["do_sample"] = False
+        streamer = TextStreamer(self.tokenizer, skip_prompt=True, skip_special_tokens=True) if stream_to_console else None
+        if streamer:
+            kwargs["streamer"] = streamer
         outputs = self.model.generate(**model_inputs, **kwargs)
         if torch.cuda.is_available():
             torch.cuda.synchronize()
@@ -821,7 +825,7 @@ class QwenVLBase:
         text = self.tokenizer.decode(outputs[0, input_len:], skip_special_tokens=True)
         return text.strip()
 
-    def run(self, model_name, quantization, preset_prompt, custom_prompt, image, video, frame_count, max_tokens, temperature, top_p, num_beams, repetition_penalty, seed, keep_model_loaded, attention_mode, use_torch_compile, device, video_fps=16.0, enable_thinking=True):
+    def run(self, model_name, quantization, preset_prompt, custom_prompt, image, video, frame_count, max_tokens, temperature, top_p, num_beams, repetition_penalty, seed, keep_model_loaded, attention_mode, use_torch_compile, device, video_fps=16.0, enable_thinking=True, stream_to_console=False):
         # Create progress bar with 3 stages: setup, model loading, generation
         pbar = ProgressBar(3)
         
@@ -856,6 +860,7 @@ class QwenVLBase:
                 repetition_penalty,
                 video_fps,
                 enable_thinking,
+                stream_to_console,
             )
             
             pbar.update_absolute(3, 3, None)
@@ -889,6 +894,7 @@ class AILab_QwenVL(QwenVLBase):
                 "video": ("IMAGE",),
                 "video_fps": ("FLOAT", {"default": 16.0, "min": 1.0, "max": 120.0, "tooltip": "Frames per second of the input video. Used for accurate timestamp generation."}),
                 "enable_thinking": ("BOOLEAN", {"default": True, "tooltip": "Enable chain-of-thought reasoning. Disable for faster, more direct responses."}),
+                "stream_to_console": ("BOOLEAN", {"default": False, "tooltip": "Print tokens to the console as they are generated."}),
             },
         }
 
@@ -897,8 +903,8 @@ class AILab_QwenVL(QwenVLBase):
     FUNCTION = "process"
     CATEGORY = "🧪AILab/QwenVL"
 
-    def process(self, model_name, quantization, preset_prompt, custom_prompt, attention_mode, max_tokens, keep_model_loaded, seed, image=None, video=None, video_fps=16.0, enable_thinking=True):
-        return self.run(model_name, quantization, preset_prompt, custom_prompt, image, video, 16, max_tokens, 0.6, 0.9, 1, 1.2, seed, keep_model_loaded, attention_mode, False, "auto", video_fps, enable_thinking)
+    def process(self, model_name, quantization, preset_prompt, custom_prompt, attention_mode, max_tokens, keep_model_loaded, seed, image=None, video=None, video_fps=16.0, enable_thinking=True, stream_to_console=False):
+        return self.run(model_name, quantization, preset_prompt, custom_prompt, image, video, 16, max_tokens, 0.6, 0.9, 1, 1.2, seed, keep_model_loaded, attention_mode, False, "auto", video_fps, enable_thinking, stream_to_console)
 
 class AILab_QwenVL_Advanced(QwenVLBase):
     @classmethod
@@ -936,6 +942,7 @@ class AILab_QwenVL_Advanced(QwenVLBase):
                 "video": ("IMAGE",),
                 "video_fps": ("FLOAT", {"default": 16.0, "min": 1.0, "max": 120.0, "tooltip": "Frames per second of the input video. Used for accurate timestamp generation."}),
                 "enable_thinking": ("BOOLEAN", {"default": True, "tooltip": "Enable chain-of-thought reasoning. Disable for faster, more direct responses."}),
+                "stream_to_console": ("BOOLEAN", {"default": False, "tooltip": "Print tokens to the console as they are generated."}),
             },
         }
 
@@ -944,8 +951,8 @@ class AILab_QwenVL_Advanced(QwenVLBase):
     FUNCTION = "process"
     CATEGORY = "🧪AILab/QwenVL"
 
-    def process(self, model_name, quantization, attention_mode, use_torch_compile, device, preset_prompt, custom_prompt, max_tokens, temperature, top_p, num_beams, repetition_penalty, frame_count, keep_model_loaded, seed, image=None, video=None, video_fps=16.0, enable_thinking=True):
-        return self.run(model_name, quantization, preset_prompt, custom_prompt, image, video, frame_count, max_tokens, temperature, top_p, num_beams, repetition_penalty, seed, keep_model_loaded, attention_mode, use_torch_compile, device, video_fps, enable_thinking)
+    def process(self, model_name, quantization, attention_mode, use_torch_compile, device, preset_prompt, custom_prompt, max_tokens, temperature, top_p, num_beams, repetition_penalty, frame_count, keep_model_loaded, seed, image=None, video=None, video_fps=16.0, enable_thinking=True, stream_to_console=False):
+        return self.run(model_name, quantization, preset_prompt, custom_prompt, image, video, frame_count, max_tokens, temperature, top_p, num_beams, repetition_penalty, seed, keep_model_loaded, attention_mode, use_torch_compile, device, video_fps, enable_thinking, stream_to_console)
 
 NODE_CLASS_MAPPINGS = {
     "AILab_QwenVL": AILab_QwenVL,
